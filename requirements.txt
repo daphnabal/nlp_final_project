@@ -1,0 +1,9 @@
+transformers>=4.40
+torch>=2.2
+datasets>=2.18
+google-generativeai>=0.5
+nltk>=3.8
+matplotlib>=3.8
+pandas>=2.1
+tqdm>=4.66
+accelerate>=0.28
