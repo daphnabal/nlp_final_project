@@ -13,5 +13,6 @@
 #SBATCH --gpus=1
 
 cd /specific/a/home/cc/students/csguests/ishaiaric/nlp_final_project
-
+source ~/.cshrc
+conda activate nlp_env
 python scripts/run_pipeline.py generate
