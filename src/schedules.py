@@ -8,7 +8,7 @@ representing the sampling temperature for each story segment.
 from typing import List
 
 
-def fixed(n_chunks: int = 3, tau: float = 0.9) -> List[float]:
+def fixed(n_chunks: int = 3, tau: float = 0.7) -> List[float]:
     """Baseline: constant temperature across all chunks."""
     return [tau] * n_chunks
 
@@ -61,7 +61,7 @@ def peak(n_chunks: int = 3, low: float = 0.5, high: float = 1.3) -> List[float]:
 
 
 def get_all_schedules(n_chunks: int = 3) -> dict:
-    """Return all named schedules as {name: [temps]} dict."""
+    """Return the 5 main named schedules as {name: [temps]} dict."""
     return {
         "fixed":      fixed(n_chunks),
         "increasing": increasing(n_chunks),
@@ -71,9 +71,30 @@ def get_all_schedules(n_chunks: int = 3) -> dict:
     }
 
 
+def get_sweep_schedules(temps: List[float], n_chunks: int = 3) -> dict:
+    """
+    Return fixed-temperature sweep schedules as {sweep_T: [temps]} dict.
+
+    E.g. get_sweep_schedules([0.5, 0.7, 1.0, 1.2, 1.5]) →
+         {"sweep_0.5": [0.5,0.5,0.5], "sweep_0.7": [0.7,0.7,0.7], ...}
+    """
+    return {f"sweep_{t}": fixed(n_chunks, t) for t in temps}
+
+
 def get_schedule(name: str, n_chunks: int = 3) -> List[float]:
-    """Look up a schedule by name."""
+    """
+    Look up a schedule by name.
+
+    Handles both named schedules (fixed, increasing, ...) and
+    sweep schedules of the form 'sweep_<tau>' (e.g. 'sweep_1.2').
+    """
+    if name.startswith("sweep_"):
+        try:
+            tau = float(name[len("sweep_"):])
+        except ValueError:
+            raise ValueError(f"Invalid sweep schedule name '{name}'. Expected 'sweep_<float>'.")
+        return fixed(n_chunks, tau)
     schedules = get_all_schedules(n_chunks)
     if name not in schedules:
-        raise ValueError(f"Unknown schedule '{name}'. Options: {list(schedules.keys())}")
+        raise ValueError(f"Unknown schedule '{name}'. Options: {list(schedules.keys())} or 'sweep_<tau>'.")
     return schedules[name]

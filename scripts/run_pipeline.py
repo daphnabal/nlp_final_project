@@ -32,14 +32,16 @@ import config
 def run_generate(args):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from src.schedules import get_all_schedules
+    from src.schedules import get_schedule
     from src.generation import run_generation
 
-    model_name  = args.model or config.MODEL_NAME
-    n_prompts   = args.n_prompts or config.N_PROMPTS
-    schedules   = args.schedules or config.SCHEDULES
-    n_chunks    = args.n_chunks or config.N_CHUNKS
-    tpc         = args.tokens_per_chunk or config.TOKENS_PER_CHUNK
+    model_name        = args.model or config.MODEL_NAME
+    n_prompts         = args.n_prompts or config.N_PROMPTS
+    schedules         = args.schedules or config.SCHEDULES
+    n_chunks          = args.n_chunks or config.N_CHUNKS
+    tpc               = args.tokens_per_chunk or config.TOKENS_PER_CHUNK
+    prompt_format     = args.prompt_format or config.PROMPT_FORMAT
+    repetition_penalty = args.repetition_penalty or config.REPETITION_PENALTY
 
     # Load prompts
     with open(config.DATA_PATH) as f:
@@ -60,11 +62,10 @@ def run_generate(args):
         model = model.to(device)
     model.eval()
 
-    schedule_map = get_all_schedules(n_chunks)
     for sched_name in schedules:
-        schedule = schedule_map[sched_name]
+        schedule = get_schedule(sched_name, n_chunks)
         out_dir = config.results_dir(model_name, sched_name)
-        print(f"\n=== Schedule: {sched_name} | temps: {schedule} ===")
+        print(f"\n=== Schedule: {sched_name} | temps: {schedule} | format: {prompt_format} ===")
         run_generation(
             model=model,
             tokenizer=tokenizer,
@@ -74,6 +75,8 @@ def run_generate(args):
             tokens_per_chunk=tpc,
             model_name=model_name,
             output_dir=out_dir,
+            prompt_format=prompt_format,
+            repetition_penalty=repetition_penalty,
         )
     print("\n[generate] Done.")
 
@@ -295,7 +298,9 @@ def parse_args():
     parser.add_argument("--schedules",        nargs="+",  default=None, help=f"Schedules to run (default: all five)")
     parser.add_argument("--n_chunks",         type=int,   default=None, help=f"Number of chunks per story (default: {config.N_CHUNKS})")
     parser.add_argument("--tokens_per_chunk", type=int,   default=None, help=f"Tokens per chunk (default: {config.TOKENS_PER_CHUNK})")
-    parser.add_argument("--eval_mode",        type=str,   default=None, choices=["metrics", "local_llm", "all", "gemini"], help=f"Evaluation mode (default: {config.EVAL_MODE})")
+    parser.add_argument("--eval_mode",          type=str,   default=None, choices=["metrics", "local_llm", "all", "gemini"], help=f"Evaluation mode (default: {config.EVAL_MODE})")
+    parser.add_argument("--prompt_format",      type=str,   default=None, choices=["base", "instruct"], help=f"Prompt framing format (default: {config.PROMPT_FORMAT})")
+    parser.add_argument("--repetition_penalty", type=float, default=None, help=f"Repetition penalty for generation (default: {config.REPETITION_PENALTY})")
     return parser.parse_args()
 
 
