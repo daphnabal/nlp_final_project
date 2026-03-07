@@ -1,8 +1,8 @@
-#! /bin/sh
+#!/bin/bash
 
 #SBATCH --job-name=nlp_generate
-#SBATCH --output=/specific/a/home/cc/students/csguests/ishaiaric/nlp_final_project/generate.out
-#SBATCH --error=/specific/a/home/cc/students/csguests/ishaiaric/nlp_final_project/generate.err
+#SBATCH --output=/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/generate.out
+#SBATCH --error=/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/generate.err
 #SBATCH --partition=studentkillable
 #SBATCH --time=240
 #SBATCH --signal=USR1@120
@@ -12,7 +12,13 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gpus=1
 
+
 cd /specific/a/home/cc/students/csguests/ishaiaric/nlp_final_project
-source ~/.cshrc
+export PATH="/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/anaconda3/envs/nlp_env/bin:$PATH"
+export HF_HOME=/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/.cache/huggingface
+source /vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/anaconda3/etc/profile.d/conda.sh
 conda activate nlp_env
+
+which python
+python -c "import torch; print(torch.__version__)"
 python scripts/run_pipeline.py generate

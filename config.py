@@ -4,7 +4,10 @@
 MODEL_NAME = "Qwen/Qwen2.5-0.5B"
 # MODEL_NAME = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
-EVAL_MODE = "metrics"   # "gemini" | "metrics"
+EVAL_MODE = "all"   # "metrics" | "local_llm" | "all" | "gemini"
+
+# Local on-prem judge model (used when EVAL_MODE == "local_llm" or "all")
+LOCAL_JUDGE_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 
 N_CHUNKS = 3
 STORY_TARGET_TOKENS = 360          # total tokens; divided evenly across chunks

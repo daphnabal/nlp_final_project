@@ -107,7 +107,7 @@ def run_evaluate(args):
         print("[evaluate] No stories found. Aborting.")
         return
 
-    if eval_mode == "metrics":
+    if eval_mode in ("metrics", "all"):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForCausalLM.from_pretrained(
@@ -128,6 +128,21 @@ def run_evaluate(args):
         for sched, score in diversity_scores.items():
             print(f"  {sched}: {score:.4f}")
 
+        # Free generation model from GPU before loading judge
+        if eval_mode == "all":
+            import gc
+            del model
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    if eval_mode in ("local_llm", "all"):
+        from src.evaluation.local_judge import load_judge_model, score_stories_batch as local_score_batch
+        judge_model, judge_tokenizer = load_judge_model()
+        for sched_name, stories in stories_by_schedule.items():
+            print(f"[evaluate] Local LLM judging: {sched_name}")
+            local_score_batch(judge_model, judge_tokenizer, stories)
+
     elif eval_mode == "gemini":
         from src.evaluation.llm_judge import score_stories_batch
         for sched_name, stories in stories_by_schedule.items():
@@ -143,7 +158,7 @@ def run_evaluate(args):
                 f.write(json.dumps(s, ensure_ascii=False) + "\n")
         print(f"[evaluate] Saved → {scores_path}")
 
-    if eval_mode == "metrics" and "diversity_scores" in dir():
+    if eval_mode in ("metrics", "all") and "diversity_scores" in dir():
         div_path = os.path.join(config.RESULTS_DIR, "diversity.json")
         with open(div_path, "w") as f:
             json.dump(diversity_scores, f, indent=2)
@@ -227,7 +242,7 @@ def run_analyze(args):
         for ax, col, title in zip(
             axes,
             ["creativity", "coherence_llm"],
-            ["Creativity (Gemini judge)", "Coherence (Gemini judge)"],
+            ["Creativity (LLM judge)", "Coherence (LLM judge)"],
         ):
             means = df.groupby("schedule")[col].mean().reindex(schedules)
             stds  = df.groupby("schedule")[col].std().reindex(schedules)
@@ -280,7 +295,7 @@ def parse_args():
     parser.add_argument("--schedules",        nargs="+",  default=None, help=f"Schedules to run (default: all five)")
     parser.add_argument("--n_chunks",         type=int,   default=None, help=f"Number of chunks per story (default: {config.N_CHUNKS})")
     parser.add_argument("--tokens_per_chunk", type=int,   default=None, help=f"Tokens per chunk (default: {config.TOKENS_PER_CHUNK})")
-    parser.add_argument("--eval_mode",        type=str,   default=None, choices=["metrics", "gemini"], help=f"Evaluation mode (default: {config.EVAL_MODE})")
+    parser.add_argument("--eval_mode",        type=str,   default=None, choices=["metrics", "local_llm", "all", "gemini"], help=f"Evaluation mode (default: {config.EVAL_MODE})")
     return parser.parse_args()
 
 
