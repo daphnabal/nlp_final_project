@@ -152,6 +152,13 @@ def run_evaluate(args):
             print(f"[evaluate] Gemini judging: {sched_name}")
             score_stories_batch(stories)
 
+    elif eval_mode == "prometheus":
+        from src.evaluation.prometheus_judge import load_prometheus_model, score_stories_batch as prom_score_batch
+        prom_model, prom_tokenizer = load_prometheus_model()
+        for sched_name, stories in stories_by_schedule.items():
+            print(f"[evaluate] Prometheus judging: {sched_name}")
+            prom_score_batch(prom_model, prom_tokenizer, stories)
+
     # Save scores
     for sched_name, stories in stories_by_schedule.items():
         out_dir = config.results_dir(model_name, sched_name)
@@ -298,7 +305,7 @@ def parse_args():
     parser.add_argument("--schedules",        nargs="+",  default=None, help=f"Schedules to run (default: all five)")
     parser.add_argument("--n_chunks",         type=int,   default=None, help=f"Number of chunks per story (default: {config.N_CHUNKS})")
     parser.add_argument("--tokens_per_chunk", type=int,   default=None, help=f"Tokens per chunk (default: {config.TOKENS_PER_CHUNK})")
-    parser.add_argument("--eval_mode",          type=str,   default=None, choices=["metrics", "local_llm", "all", "gemini"], help=f"Evaluation mode (default: {config.EVAL_MODE})")
+    parser.add_argument("--eval_mode",          type=str,   default=None, choices=["metrics", "local_llm", "all", "gemini", "prometheus"], help=f"Evaluation mode (default: {config.EVAL_MODE})")
     parser.add_argument("--prompt_format",      type=str,   default=None, choices=["base", "instruct"], help=f"Prompt framing format (default: {config.PROMPT_FORMAT})")
     parser.add_argument("--repetition_penalty", type=float, default=None, help=f"Repetition penalty for generation (default: {config.REPETITION_PENALTY})")
     return parser.parse_args()

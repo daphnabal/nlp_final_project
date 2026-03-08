@@ -4,10 +4,13 @@
 MODEL_NAME = "Qwen/Qwen2.5-0.5B"          # base model (prompt_format="base")
 MODEL_NAME_2 = "Qwen/Qwen2.5-1.5B-Instruct"  # instruct model (prompt_format="instruct")
 
-EVAL_MODE = "all"   # "metrics" | "local_llm" | "all" | "gemini"
+EVAL_MODE = "all"   # "metrics" | "local_llm" | "all" | "gemini" | "prometheus"
 
 # Local on-prem judge model (used when EVAL_MODE == "local_llm" or "all")
 LOCAL_JUDGE_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
+
+# Prometheus judge model (used when EVAL_MODE == "prometheus")
+PROMETHEUS_MODEL = "prometheus-eval/prometheus-7b-v2.0"
 
 # Generation settings
 PROMPT_FORMAT = "base"       # "base" (raw text prefix) | "instruct" (chat template)
@@ -34,10 +37,10 @@ GEMINI_API_KEY_ENV = "GEMINI_API_KEY"   # env var name
 import os
 
 ROOT_DIR = os.path.dirname(__file__)
-# DATA_PATH = os.path.join(ROOT_DIR, "data", "prompts.jsonl")
-# RESULTS_DIR = os.path.join(ROOT_DIR, "results", "results_eval")
-DATA_PATH = "/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/prompts.jsonl"
-RESULTS_DIR = "/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/results"
+DATA_PATH = os.path.join(ROOT_DIR, "data", "prompts.jsonl")
+RESULTS_DIR = os.path.join(ROOT_DIR, "results_with_instruct")  
+# DATA_PATH = "/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/prompts.jsonl"
+# RESULTS_DIR = "/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/results"
 
 def results_dir(model_name: str, schedule: str) -> str:
     """Return (and create) the results directory for a given (model, schedule) pair."""
