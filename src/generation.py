@@ -7,7 +7,52 @@ import os
 from typing import List, Dict, Any
 
 import torch
+import torch.nn.functional as F
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
+
+
+def _entropy_from_logits(scores_tuple) -> List[float]:
+    """
+    Compute per-token entropy from a tuple of per-step logits.
+
+    Args:
+        scores_tuple: Tuple of tensors (one per generated token), each shape [1, vocab_size].
+                      These are the post-processed logits (temperature + repetition penalty
+                      already applied) as returned by model.generate(output_scores=True).
+
+    Returns:
+        List of scalar entropy values (nats), one per token.
+    """
+    entropies = []
+    for step_logits in scores_tuple:
+        probs = F.softmax(step_logits[0], dim=-1)          # [vocab_size]
+        log_probs = torch.log(probs + 1e-10)
+        entropy = -(probs * log_probs).sum().item()
+        entropies.append(entropy)
+    return entropies
+
+
+def _nucleus_size_from_logits(scores_tuple, p: float = 0.9) -> List[int]:
+    """
+    Compute the nucleus size (number of tokens covering `p` probability mass)
+    for each generated token position.
+
+    Args:
+        scores_tuple: Same tuple as in _entropy_from_logits.
+        p: Probability mass threshold (default 0.9 → 90% nucleus).
+
+    Returns:
+        List of integers (nucleus sizes), one per token.
+    """
+    sizes = []
+    for step_logits in scores_tuple:
+        probs = F.softmax(step_logits[0], dim=-1)          # [vocab_size]
+        sorted_probs, _ = torch.sort(probs, descending=True)
+        cumsum = torch.cumsum(sorted_probs, dim=0)
+        # Smallest k such that cumsum[k-1] >= p
+        k = int((cumsum < p).sum().item()) + 1
+        sizes.append(k)
+    return sizes
 
 
 _BASE_PREFIX = (
@@ -71,15 +116,31 @@ def generate_story(
         repetition_penalty: Penalise repeated tokens (>1.0 reduces loops).
 
     Returns:
-        Dict with keys: story, prompt, schedule, tokens_per_chunk, chunk_texts.
+        Dict with keys: story, prompt, schedule, tokens_per_chunk, chunk_texts,
+        chunk_entropies (List[List[float]] — per-token entropy in nats, one list per chunk),
+        chunk_nucleus_sizes (List[List[int]] — 90% nucleus size per token, one list per chunk).
     """
     device = next(model.parameters()).device
     input_ids = _build_input_ids(tokenizer, prompt, prompt_format, device)
 
     chunk_texts = []
+    chunk_texts_alt = []
+    chunk_entropies: List[List[float]] = []
+    chunk_nucleus_sizes: List[List[int]] = []
+
     for tau in schedule:
         with torch.no_grad():
-            output_ids = model.generate(
+            output = model.generate(
+                input_ids,
+                max_new_tokens=tokens_per_chunk,
+                do_sample=True,
+                temperature=tau,
+                repetition_penalty=repetition_penalty,
+                pad_token_id=tokenizer.eos_token_id,
+                return_dict_in_generate=True,
+                output_scores=True,
+            )
+            output_alt = model.generate(
                 input_ids,
                 max_new_tokens=tokens_per_chunk,
                 do_sample=True,
@@ -87,11 +148,22 @@ def generate_story(
                 repetition_penalty=repetition_penalty,
                 pad_token_id=tokenizer.eos_token_id,
             )
+        output_ids = output.sequences
+        scores = output.scores   # tuple of [1, vocab_size] tensors, one per new token
+
         # Only the newly generated tokens
         new_ids = output_ids[0, input_ids.shape[1]:]
         chunk_text = tokenizer.decode(new_ids, skip_special_tokens=True)
         chunk_texts.append(chunk_text)
-        # Feed full output as context for next chunk
+
+        new_ids_alt = output_alt[0, input_ids.shape[1]:]
+        chunk_texts_alt.append(tokenizer.decode(new_ids_alt, skip_special_tokens=True))
+
+        # Per-token metrics for this chunk
+        chunk_entropies.append(_entropy_from_logits(scores))
+        chunk_nucleus_sizes.append(_nucleus_size_from_logits(scores, p=0.9))
+
+        # Feed PRIMARY output as context for next chunk (shadow is discarded for continuation)
         input_ids = output_ids
 
     story = " ".join(chunk_texts)
@@ -100,7 +172,10 @@ def generate_story(
         "schedule": schedule,
         "tokens_per_chunk": tokens_per_chunk,
         "chunk_texts": chunk_texts,
+        "chunk_texts_alt": chunk_texts_alt,
         "story": story,
+        "chunk_entropies": chunk_entropies,
+        "chunk_nucleus_sizes": chunk_nucleus_sizes,
     }
 
 

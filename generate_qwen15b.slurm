@@ -4,7 +4,7 @@
 #SBATCH --output=/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/gen_qwen15b.out
 #SBATCH --error=/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/gen_qwen15b.err
 #SBATCH --partition=studentkillable
-#SBATCH --time=240
+#SBATCH --time=480
 #SBATCH --signal=USR1@120
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
