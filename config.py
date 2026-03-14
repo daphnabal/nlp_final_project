@@ -1,13 +1,16 @@
 # Central configuration for the dynamic temperature story generation project.
 # Swap model or eval mode here — no changes needed elsewhere.
 
-MODEL_NAME = "Qwen/Qwen2.5-0.5B"          # base model (prompt_format="base")
-MODEL_NAME_2 = "Qwen/Qwen2.5-1.5B-Instruct"  # instruct model (prompt_format="instruct")
+# MODEL_NAME = "Qwen/Qwen2.5-0.5B"          # base model (prompt_format="base")
+MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"  # instruct model (prompt_format="instruct")
 
 EVAL_MODE = "all"   # "metrics" | "local_llm" | "all" | "gemini" | "prometheus"
 
 # Local on-prem judge model (used when EVAL_MODE == "local_llm" or "all")
 LOCAL_JUDGE_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
+
+# OPT evaluator model for coherence scoring (Su & Collier 2022)
+OPT_COHERENCE_MODEL = "facebook/opt-1.3b"
 
 # Prometheus judge model (used when EVAL_MODE == "prometheus")
 PROMETHEUS_MODEL = "prometheus-eval/prometheus-7b-v2.0"
@@ -18,11 +21,11 @@ REPETITION_PENALTY = 1.3     # >1.0 discourages repetition loops
 
 # Temperature sweep baselines
 SWEEP_TEMPS = [0.5, 0.7, 1.0, 1.2, 1.5]
-SWEEP_SCHEDULES = [f"sweep_{t}" for t in SWEEP_TEMPS]
+SWEEP_SCHEDULES = [f"fixed_{t}" for t in SWEEP_TEMPS]
 
-N_CHUNKS = 3
-STORY_TARGET_TOKENS = 360          # total tokens; divided evenly across chunks
-TOKENS_PER_CHUNK = STORY_TARGET_TOKENS // N_CHUNKS   # 120
+N_CHUNKS = 5
+STORY_TARGET_TOKENS = 500          # total tokens; divided evenly across chunks
+TOKENS_PER_CHUNK = STORY_TARGET_TOKENS // N_CHUNKS   # 100
 
 N_PROMPTS = 50                     # number of WritingPrompts examples to use
 
@@ -38,7 +41,7 @@ import os
 
 ROOT_DIR = os.path.dirname(__file__)
 DATA_PATH = os.path.join(ROOT_DIR, "data", "prompts.jsonl")
-RESULTS_DIR = os.path.join(ROOT_DIR, "results_with_instruct")  
+RESULTS_DIR = os.path.join(ROOT_DIR, "results_four_alts")  
 # DATA_PATH = "/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/prompts.jsonl"
 # RESULTS_DIR = "/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/results"
 

@@ -140,14 +140,18 @@ def generate_story(
                 return_dict_in_generate=True,
                 output_scores=True,
             )
-            output_alt = model.generate(
-                input_ids,
-                max_new_tokens=tokens_per_chunk,
-                do_sample=True,
-                temperature=tau,
-                repetition_penalty=repetition_penalty,
-                pad_token_id=tokenizer.eos_token_id,
-            )
+            alt_texts = []
+            for _ in range(3):
+                output_alt = model.generate(
+                    input_ids,
+                    max_new_tokens=tokens_per_chunk,
+                    do_sample=True,
+                    temperature=tau,
+                    repetition_penalty=repetition_penalty,
+                    pad_token_id=tokenizer.eos_token_id,
+                )
+                new_ids_alt = output_alt[0, input_ids.shape[1]:]
+                alt_texts.append(tokenizer.decode(new_ids_alt, skip_special_tokens=True))
         output_ids = output.sequences
         scores = output.scores   # tuple of [1, vocab_size] tensors, one per new token
 
@@ -156,8 +160,7 @@ def generate_story(
         chunk_text = tokenizer.decode(new_ids, skip_special_tokens=True)
         chunk_texts.append(chunk_text)
 
-        new_ids_alt = output_alt[0, input_ids.shape[1]:]
-        chunk_texts_alt.append(tokenizer.decode(new_ids_alt, skip_special_tokens=True))
+        chunk_texts_alt.append(alt_texts)  # List[str] of 3 alternatives for this chunk
 
         # Per-token metrics for this chunk
         chunk_entropies.append(_entropy_from_logits(scores))

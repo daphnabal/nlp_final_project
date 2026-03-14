@@ -48,6 +48,66 @@ def compute_coherence(
     return token_log_probs.mean().item()
 
 
+def compute_coherence_opt(
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    prompt: str,
+    story: str,
+    device: str = None,
+) -> Dict[str, Any]:
+    """
+    Compute coherence of `story` conditioned on `prompt` using an OPT evaluator.
+
+    Implements: coherence(x̂, x) = (1/|x̂|) × Σ log p_M(x̂_i | [x : x̂_{<i}])
+    where x is the prompt, x̂ is the story, M is the evaluator model.
+
+    Returns dict with:
+        coherence_opt: float         — avg token log-likelihood over story tokens
+        opt_token_entropies: List[float] — per-token entropy (nats) over story tokens
+    """
+    if device is None:
+        device = next(model.parameters()).device
+
+    prompt_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
+    story_ids = tokenizer.encode(story, add_special_tokens=False, return_tensors="pt").to(device)
+    story_len = story_ids.shape[1]
+
+    if story_len == 0:
+        return {"coherence_opt": float("nan"), "opt_token_entropies": []}
+
+    input_ids = torch.cat([prompt_ids, story_ids], dim=1)  # [1, prompt_len + story_len]
+    prompt_len = prompt_ids.shape[1]
+
+    with torch.no_grad():
+        logits = model(input_ids).logits  # [1, seq_len, vocab]
+
+    # Logits at positions [prompt_len-1 .. prompt_len+story_len-2] predict story tokens
+    story_logits = logits[0, prompt_len - 1: prompt_len + story_len - 1, :]  # [story_len, vocab]
+    story_labels = story_ids[0]  # [story_len]
+
+    log_probs = F.log_softmax(story_logits, dim=-1)
+    token_log_probs = log_probs[range(story_len), story_labels]
+    coherence_opt = token_log_probs.mean().item()
+
+    probs = F.softmax(story_logits, dim=-1)
+    entropies = -(probs * torch.log(probs + 1e-10)).sum(dim=-1).tolist()
+
+    return {"coherence_opt": coherence_opt, "opt_token_entropies": entropies}
+
+
+def score_coherence_opt_batch(
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    stories: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Add 'coherence_opt' and 'opt_token_entropies' keys to each story dict."""
+    device = next(model.parameters()).device
+    for s in stories:
+        result = compute_coherence_opt(model, tokenizer, s["prompt"], s["story"], device)
+        s.update(result)
+    return stories
+
+
 def score_coherence_batch(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,

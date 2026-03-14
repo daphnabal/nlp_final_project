@@ -76,9 +76,9 @@ def get_sweep_schedules(temps: List[float], n_chunks: int = 3) -> dict:
     Return fixed-temperature sweep schedules as {sweep_T: [temps]} dict.
 
     E.g. get_sweep_schedules([0.5, 0.7, 1.0, 1.2, 1.5]) →
-         {"sweep_0.5": [0.5,0.5,0.5], "sweep_0.7": [0.7,0.7,0.7], ...}
+         {"fixed_0.5": [0.5,0.5,0.5], "fixed_0.7": [0.7,0.7,0.7], ...}
     """
-    return {f"sweep_{t}": fixed(n_chunks, t) for t in temps}
+    return {f"fixed_{t}": fixed(n_chunks, t) for t in temps}
 
 
 def get_schedule(name: str, n_chunks: int = 3) -> List[float]:
@@ -86,15 +86,15 @@ def get_schedule(name: str, n_chunks: int = 3) -> List[float]:
     Look up a schedule by name.
 
     Handles both named schedules (fixed, increasing, ...) and
-    sweep schedules of the form 'sweep_<tau>' (e.g. 'sweep_1.2').
+    fixed-temperature schedules of the form 'fixed_<tau>' (e.g. 'fixed_1.2').
     """
-    if name.startswith("sweep_"):
+    if name.startswith("fixed_"):
         try:
-            tau = float(name[len("sweep_"):])
+            tau = float(name[len("fixed_"):])
         except ValueError:
-            raise ValueError(f"Invalid sweep schedule name '{name}'. Expected 'sweep_<float>'.")
+            raise ValueError(f"Invalid fixed schedule name '{name}'. Expected 'fixed_<float>'.")
         return fixed(n_chunks, tau)
     schedules = get_all_schedules(n_chunks)
     if name not in schedules:
-        raise ValueError(f"Unknown schedule '{name}'. Options: {list(schedules.keys())} or 'sweep_<tau>'.")
+        raise ValueError(f"Unknown schedule '{name}'. Options: {list(schedules.keys())} or 'fixed_<tau>'.")
     return schedules[name]
