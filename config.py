@@ -41,7 +41,7 @@ import os
 
 ROOT_DIR = os.path.dirname(__file__)
 DATA_PATH = os.path.join(ROOT_DIR, "data", "prompts.jsonl")
-RESULTS_DIR = os.path.join(ROOT_DIR, "results_four_alts")  
+RESULTS_DIR = os.path.join(ROOT_DIR, "results_with_500")  
 # DATA_PATH = "/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/prompts.jsonl"
 # RESULTS_DIR = "/vol/joberant_nobck/data/NLP_368307701_2526a/ishaiaric/results"
 

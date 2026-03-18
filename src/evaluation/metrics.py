@@ -89,8 +89,8 @@ def compute_coherence_opt(
     token_log_probs = log_probs[range(story_len), story_labels]
     coherence_opt = token_log_probs.mean().item()
 
-    probs = F.softmax(story_logits, dim=-1)
-    entropies = -(probs * torch.log(probs + 1e-10)).sum(dim=-1).tolist()
+    probs = torch.exp(log_probs)  # reuse numerically stable log_softmax output
+    entropies = (-(probs * log_probs).sum(dim=-1)).tolist()
 
     return {"coherence_opt": coherence_opt, "opt_token_entropies": entropies}
 
