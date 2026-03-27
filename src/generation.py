@@ -232,6 +232,179 @@ def run_generation(
     return out_path
 
 
+# ---------------------------------------------------------------------------
+# Final experiment — generation functions
+# ---------------------------------------------------------------------------
+
+def generate_story_final(
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    prompt: str,
+    schedule: List[float],
+    tokens_per_chunk: int = 70,
+    prompt_format: str = "instruct",
+    repetition_penalty: float = 1.3,
+) -> Dict[str, Any]:
+    """
+    Generate one story in N chunks, each chunk using its scheduled temperature.
+
+    This is a streamlined version of generate_story for the final experiment.
+    The key difference is that alternative-text sampling is removed: instead of
+    generating 3 alternatives per chunk internally, the caller generates multiple
+    independent stories by calling this function N_SHADOWS times from outside.
+    That design is cleaner and avoids wasting GPU time on discarded samples.
+
+    Per-token entropy is recorded for every chunk (see chunk_entropies).
+    Entropy H = -Σ p log p is computed from the post-temperature logits returned
+    by model.generate(output_scores=True), so it reflects the actual sampling
+    distribution (temperature already applied).
+
+    Args:
+        model: HuggingFace causal LM (already on the correct device).
+        tokenizer: Matching tokenizer.
+        prompt: The writing prompt string.
+        schedule: List of temperatures, one per chunk (length == n_chunks).
+        tokens_per_chunk: Max new tokens per chunk (default 70; 7×70=490 total).
+        prompt_format: "instruct" (chat template) or "base" (raw prefix).
+        repetition_penalty: Penalise repeated tokens (>1 reduces loops).
+
+    Returns:
+        Dict with keys:
+            prompt          (str)           — the input prompt
+            schedule        (List[float])   — temperature list used
+            tokens_per_chunk (int)
+            chunk_texts     (List[str])     — decoded text per chunk
+            story           (str)           — full story (chunks joined)
+            chunk_entropies (List[List[float]])
+                Per-token entropy in nats for each chunk.
+                Shape: [n_chunks, tokens_in_chunk].
+                Useful for verifying that temperature drives entropy as expected
+                and for per-position analysis.
+            chunk_nucleus_sizes (List[List[int]])
+                90%-nucleus size per token per chunk.  Complements entropy
+                as a second measure of distribution sharpness.
+    """
+    device = next(model.parameters()).device
+    input_ids = _build_input_ids(tokenizer, prompt, prompt_format, device)
+
+    chunk_texts: List[List[float]] = []
+    chunk_entropies: List[List[float]] = []
+    chunk_nucleus_sizes: List[List[int]] = []
+
+    for tau in schedule:
+        with torch.no_grad():
+            output = model.generate(
+                input_ids,
+                max_new_tokens=tokens_per_chunk,
+                do_sample=True,
+                temperature=tau,
+                repetition_penalty=repetition_penalty,
+                pad_token_id=tokenizer.eos_token_id,
+                return_dict_in_generate=True,
+                output_scores=True,
+            )
+
+        output_ids = output.sequences
+        scores = output.scores          # tuple of [1, vocab_size], one per new token
+
+        new_ids = output_ids[0, input_ids.shape[1]:]
+        chunk_texts.append(tokenizer.decode(new_ids, skip_special_tokens=True))
+        chunk_entropies.append(_entropy_from_logits(scores))
+        chunk_nucleus_sizes.append(_nucleus_size_from_logits(scores, p=0.9))
+
+        # The full output (prompt + generated so far) becomes the context for the next chunk.
+        input_ids = output_ids
+
+    return {
+        "prompt":             prompt,
+        "schedule":           schedule,
+        "tokens_per_chunk":   tokens_per_chunk,
+        "chunk_texts":        chunk_texts,
+        "story":              " ".join(chunk_texts),
+        "chunk_entropies":    chunk_entropies,
+        "chunk_nucleus_sizes": chunk_nucleus_sizes,
+    }
+
+
+def run_generation_final(
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    prompts: List[Dict[str, Any]],
+    schedule_name: str,
+    schedule: List[float],
+    tokens_per_chunk: int,
+    model_name: str,
+    output_dir: str,
+    prompt_format: str = "instruct",
+    repetition_penalty: float = 1.3,
+    n_shadows: int = 30,
+) -> str:
+    """
+    Generate n_shadows independent stories per prompt under one temperature schedule.
+
+    The outer loop is: for each prompt → for shadow_id in range(n_shadows).
+    Each call to generate_story_final starts fresh from the prompt (no shared
+    state across shadows), producing fully independent samples.  This gives us
+    n_shadows replicates to estimate within-condition variance for each metric.
+
+    Output format (one JSON line per story in stories.jsonl):
+        {
+          "prompt_id":    int,
+          "shadow_id":    int,        # 0 … n_shadows-1
+          "model":        str,
+          "schedule":     str,        # schedule name
+          "temperatures": List[float],
+          "prompt":       str,
+          "tokens_per_chunk": int,
+          "chunk_texts":  List[str],
+          "story":        str,
+          "chunk_entropies":    List[List[float]],
+          "chunk_nucleus_sizes": List[List[int]]
+        }
+
+    Args:
+        n_shadows: Number of independent stories to generate per prompt.
+
+    Returns:
+        Path to the written stories.jsonl file.
+    """
+    from tqdm.auto import tqdm
+
+    os.makedirs(output_dir, exist_ok=True)
+    out_path = os.path.join(output_dir, "stories.jsonl")
+
+    total = len(prompts) * n_shadows
+    with open(out_path, "w") as f:
+        pbar = tqdm(total=total, desc=f"schedule={schedule_name}")
+        for item in prompts:
+            for shadow_id in range(n_shadows):
+                result = generate_story_final(
+                    model, tokenizer, item["prompt"], schedule,
+                    tokens_per_chunk=tokens_per_chunk,
+                    prompt_format=prompt_format,
+                    repetition_penalty=repetition_penalty,
+                )
+                # Build record, replacing the temperature-list "schedule" key
+                # from result with the human-readable schedule name.
+                record = {
+                    "prompt_id":    item["prompt_id"],
+                    "shadow_id":    shadow_id,
+                    "model":        model_name,
+                    "schedule":     schedule_name,
+                    "temperatures": schedule,
+                }
+                for k, v in result.items():
+                    if k != "schedule":      # already set above as string name
+                        record[k] = v
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                f.flush()
+                pbar.update(1)
+        pbar.close()
+
+    print(f"Saved {total} stories → {out_path}")
+    return out_path
+
+
 def load_stories(path: str) -> List[Dict[str, Any]]:
     """Load a stories.jsonl file, skipping any truncated or malformed lines."""
     stories = []
