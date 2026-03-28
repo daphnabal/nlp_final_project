@@ -298,6 +298,8 @@ def generate_story_final(
                 max_new_tokens=tokens_per_chunk,
                 do_sample=True,
                 temperature=tau,
+                top_p=1.0,          # disable nucleus sampling — temperature is the sole variable
+                top_k=0,            # disable top-k sampling for the same reason
                 repetition_penalty=repetition_penalty,
                 pad_token_id=tokenizer.eos_token_id,
                 return_dict_in_generate=True,
@@ -373,11 +375,33 @@ def run_generation_final(
     os.makedirs(output_dir, exist_ok=True)
     out_path = os.path.join(output_dir, "stories.jsonl")
 
+    # --- Resume logic ---
+    # Read any already-completed (prompt_id, shadow_id) pairs so we can skip
+    # them on a re-run after a premature kill.
+    done: set = set()
+    if os.path.exists(out_path):
+        for line in open(out_path):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+                done.add((r["prompt_id"], r["shadow_id"]))
+            except (json.JSONDecodeError, KeyError):
+                pass
+        if done:
+            print(f"[resume] {schedule_name}: skipping {len(done)} already-completed stories.")
+
     total = len(prompts) * n_shadows
-    with open(out_path, "w") as f:
-        pbar = tqdm(total=total, desc=f"schedule={schedule_name}")
+    remaining = total - len(done)
+
+    # Append to existing file so completed stories are preserved.
+    with open(out_path, "a") as f:
+        pbar = tqdm(total=remaining, desc=f"schedule={schedule_name}")
         for item in prompts:
             for shadow_id in range(n_shadows):
+                if (item["prompt_id"], shadow_id) in done:
+                    continue
                 result = generate_story_final(
                     model, tokenizer, item["prompt"], schedule,
                     tokens_per_chunk=tokens_per_chunk,
@@ -401,7 +425,7 @@ def run_generation_final(
                 pbar.update(1)
         pbar.close()
 
-    print(f"Saved {total} stories → {out_path}")
+    print(f"Saved {remaining} new stories (total {total}) → {out_path}")
     return out_path
 
 
