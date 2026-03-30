@@ -196,8 +196,8 @@ def get_all_final_schedules(n_chunks: int = 7) -> dict:
 
 
 def get_final_schedule(name: str, n_chunks: int = 7) -> List[float]:
-    """Look up a final-experiment schedule by name."""
-    all_scheds = get_all_final_schedules(n_chunks)
+    """Look up a final-experiment schedule by name (phase 1 or phase 2)."""
+    all_scheds = {**get_all_final_schedules(n_chunks), **get_phase2_schedules(n_chunks)}
     if name not in all_scheds:
         raise ValueError(
             f"Unknown final schedule '{name}'. "
