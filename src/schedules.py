@@ -160,6 +160,33 @@ def get_final_named_schedules(n_chunks: int = 7) -> dict:
     }
 
 
+def get_phase2_schedules(n_chunks: int = 7) -> dict:
+    """
+    Phase-2 dynamic schedules — capped at 1.334 (safe quality threshold).
+    All schedules start and end at known fixed-temperature baselines
+    {0.01, 0.334, 0.667, 1.0, 1.334}, making comparisons interpretable.
+
+    increasing_safe  [0.01 → 1.334]:  capped increasing, anchored at known fixed temps
+    decreasing_safe  [1.334 → 0.01]:  capped decreasing, anchored at known fixed temps
+    peak_safe        [0.334 → 1.334 → 0.334]:  creative climax, warm structured framing
+    valley_safe      [1.334 → 0.334 → 1.334]:  focused pivot, creative bookends
+    """
+    mid = n_chunks // 2
+
+    valley_temps, peak_temps = [], []
+    for i in range(n_chunks):
+        dist = abs(i - mid) / mid if mid > 0 else 0.0
+        valley_temps.append(round(0.334 + (1.334 - 0.334) * dist, 4))
+        peak_temps.append(round(1.334 - (1.334 - 0.334) * dist, 4))
+
+    return {
+        "increasing_safe": _linspace(0.01, 1.334, n_chunks),
+        "decreasing_safe": _linspace(1.334, 0.01, n_chunks),
+        "peak_safe":       peak_temps,
+        "valley_safe":     valley_temps,
+    }
+
+
 def get_all_final_schedules(n_chunks: int = 7) -> dict:
     """All final-experiment schedules: 7 fixed-temperature + 4 named dynamic = 11 total."""
     return {
