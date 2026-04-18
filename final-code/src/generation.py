@@ -14,14 +14,6 @@ from transformers import PreTrainedModel, PreTrainedTokenizerBase
 def _entropy_from_logits(scores_tuple) -> List[float]:
     """
     Compute per-token entropy from a tuple of per-step logits.
-
-    Args:
-        scores_tuple: Tuple of tensors (one per generated token), each shape [1, vocab_size].
-                      These are the post-processed logits (temperature + repetition penalty
-                      already applied) as returned by model.generate(output_scores=True).
-
-    Returns:
-        List of scalar entropy values (nats), one per token.
     """
     entropies = []
     for step_logits in scores_tuple:
@@ -34,15 +26,8 @@ def _entropy_from_logits(scores_tuple) -> List[float]:
 
 def _nucleus_size_from_logits(scores_tuple, p: float = 0.9) -> List[int]:
     """
-    Compute the nucleus size (number of tokens covering `p` probability mass)
+    Compute the nucleus size (NUMBER of tokens covering `p` probability mass)
     for each generated token position.
-
-    Args:
-        scores_tuple: Same tuple as in _entropy_from_logits.
-        p: Probability mass threshold (default 0.9 → 90% nucleus).
-
-    Returns:
-        List of integers (nucleus sizes), one per token.
     """
     sizes = []
     for step_logits in scores_tuple:
@@ -105,42 +90,6 @@ def generate_story_final(
 ) -> Dict[str, Any]:
     """
     Generate one story in N chunks, each chunk using its scheduled temperature.
-
-    This is a streamlined version of generate_story for the final experiment.
-    The key difference is that alternative-text sampling is removed: instead of
-    generating 3 alternatives per chunk internally, the caller generates multiple
-    independent stories by calling this function N_SHADOWS times from outside.
-    That design is cleaner and avoids wasting GPU time on discarded samples.
-
-    Per-token entropy is recorded for every chunk (see chunk_entropies).
-    Entropy H = -Σ p log p is computed from the post-temperature logits returned
-    by model.generate(output_scores=True), so it reflects the actual sampling
-    distribution (temperature already applied).
-
-    Args:
-        model: HuggingFace causal LM (already on the correct device).
-        tokenizer: Matching tokenizer.
-        prompt: The writing prompt string.
-        schedule: List of temperatures, one per chunk (length == n_chunks).
-        tokens_per_chunk: Max new tokens per chunk (default 70; 7×70=490 total).
-        prompt_format: "instruct" (chat template) or "base" (raw prefix).
-        repetition_penalty: Penalise repeated tokens (>1 reduces loops).
-
-    Returns:
-        Dict with keys:
-            prompt          (str)           — the input prompt
-            schedule        (List[float])   — temperature list used
-            tokens_per_chunk (int)
-            chunk_texts     (List[str])     — decoded text per chunk
-            story           (str)           — full story (chunks joined)
-            chunk_entropies (List[List[float]])
-                Per-token entropy in nats for each chunk.
-                Shape: [n_chunks, tokens_in_chunk].
-                Useful for verifying that temperature drives entropy as expected
-                and for per-position analysis.
-            chunk_nucleus_sizes (List[List[int]])
-                90%-nucleus size per token per chunk.  Complements entropy
-                as a second measure of distribution sharpness.
     """
     device = next(model.parameters()).device
     input_ids = _build_input_ids(tokenizer, prompt, prompt_format, device)
@@ -169,6 +118,8 @@ def generate_story_final(
 
         new_ids = output_ids[0, input_ids.shape[1]:]
         chunk_texts.append(tokenizer.decode(new_ids, skip_special_tokens=True))
+
+        # We ended up not using these two lines, however we kept them for completeness
         chunk_entropies.append(_entropy_from_logits(scores))
         chunk_nucleus_sizes.append(_nucleus_size_from_logits(scores, p=0.9))
 
@@ -197,20 +148,15 @@ def run_generation_final(
     output_dir: str,
     prompt_format: str = "instruct",
     repetition_penalty: float = 1.3,
-    n_shadows: int = 30,
+    n_copies: int = 30,
 ) -> str:
     """
-    Generate n_shadows independent stories per prompt under one temperature schedule.
-
-    The outer loop is: for each prompt → for shadow_id in range(n_shadows).
-    Each call to generate_story_final starts fresh from the prompt (no shared
-    state across shadows), producing fully independent samples.  This gives us
-    n_shadows replicates to estimate within-condition variance for each metric.
+    Generate n_copies independent stories per prompt under one temperature schedule.
 
     Output format (one JSON line per story in stories.jsonl):
         {
           "prompt_id":    int,
-          "shadow_id":    int,        # 0 … n_shadows-1
+          "shadow_id":    int,        # 0 … n_copies-1
           "model":        str,
           "schedule":     str,        # schedule name
           "temperatures": List[float],
@@ -221,19 +167,13 @@ def run_generation_final(
           "chunk_entropies":    List[List[float]],
           "chunk_nucleus_sizes": List[List[int]]
         }
-
-    Args:
-        n_shadows: Number of independent stories to generate per prompt.
-
-    Returns:
-        Path to the written stories.jsonl file.
     """
     from tqdm.auto import tqdm
 
     os.makedirs(output_dir, exist_ok=True)
     out_path = os.path.join(output_dir, "stories.jsonl")
 
-    # --- Resume logic ---
+    # "Resume" ckpt
     # Read any already-completed (prompt_id, shadow_id) pairs so we can skip
     # them on a re-run after a premature kill.
     done: set = set()
@@ -250,15 +190,15 @@ def run_generation_final(
         if done:
             print(f"[resume] {schedule_name}: skipping {len(done)} already-completed stories.")
 
-    total = len(prompts) * n_shadows
+    total = len(prompts) * n_copies
     remaining = total - len(done)
 
     # Append to existing file so completed stories are preserved.
     with open(out_path, "a") as f:
         pbar = tqdm(total=remaining, desc=f"schedule={schedule_name}")
         for item in prompts:
-            for shadow_id in range(n_shadows):
-                if (item["prompt_id"], shadow_id) in done:
+            for copy_id in range(n_copies):
+                if (item["prompt_id"], copy_id) in done:
                     continue
                 result = generate_story_final(
                     model, tokenizer, item["prompt"], schedule,
@@ -268,9 +208,10 @@ def run_generation_final(
                 )
                 # Build record, replacing the temperature-list "schedule" key
                 # from result with the human-readable schedule name.
+                # We initially called the "copies" "shadows", hence the "shadow_id" key. While CR, we decided that "copy_id" was a more sufficient term.
                 record = {
                     "prompt_id":    item["prompt_id"],
-                    "shadow_id":    shadow_id,
+                    "shadow_id":    copy_id,
                     "model":        model_name,
                     "schedule":     schedule_name,
                     "temperatures": schedule,

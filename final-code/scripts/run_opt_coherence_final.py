@@ -76,7 +76,7 @@ N_CHUNKS    = 7
 
 
 # ---------------------------------------------------------------------------
-# Coherence evaluator  (mirrors CoherenceEvaluator from compute_coherence.py)
+# Coherence evaluator
 # ---------------------------------------------------------------------------
 
 class CoherenceEvaluator(torch.nn.Module):
