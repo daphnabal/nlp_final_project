@@ -3,14 +3,14 @@ run_final_experiment.py — generation entrypoint for the final experiment.
 
 Experiment design
 -----------------
-- 30 curated WritingPrompts prompts  (data/chosen_prompts.jsonl)
+- 30 WritingPrompts prompts we chose, they exist in: (data/chosen_prompts.jsonl)
 - 30 independent shadow stories per prompt  (N_SHADOWS)
-- 7 chunks per story, 70 tokens per chunk  → ~490 tokens per story
+- 7 chunks per story, ~70 tokens per chunk  → ~490 tokens per story
 - 11 temperature schedules:
     Fixed-temperature baselines (7):
         fixed_temperature_{0.01, 0.334, 0.667, 1.0, 1.334, 1.667, 2.0}
     Named dynamic schedules (4):
-        increasing, decreasing, valley, peak
+        increasing, decreasing, valley, peak ( Later changed to more suble schedules, called <>_safe)
 - Total: 30 prompts × 30 shadows × 11 schedules = 9,900 stories
 
 Output location
@@ -46,7 +46,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 # ---------------------------------------------------------------------------
-# Experiment constants  (edit here to change the run configuration)
+# Experiment constants 
 # ---------------------------------------------------------------------------
 MODEL_NAME        = "Qwen/Qwen2.5-1.5B-Instruct"
 PROMPT_FORMAT     = "instruct"       # uses the model's chat template
@@ -70,12 +70,12 @@ def main(args):
     from src.schedules import get_all_final_schedules, get_final_schedule
     from src.generation import run_generation_final
 
-    # ---- Prompts ----
+    # Prompts
     with open(DATA_PATH) as f:
         prompts = [json.loads(line) for line in f if line.strip()]
     print(f"[experiment] Loaded {len(prompts)} prompts from {DATA_PATH}")
 
-    # ---- Schedules ----
+    # Schedules 
     all_schedules = get_all_final_schedules(N_CHUNKS)
     sched_names = args.schedules if args.schedules else list(all_schedules.keys())
     n_shadows = args.n_shadows if args.n_shadows is not None else N_SHADOWS
@@ -86,7 +86,7 @@ def main(args):
     print(f"[experiment] Total stories to generate: "
           f"{len(sched_names) * len(prompts) * n_shadows:,}")
 
-    # ---- Dry run: just print schedule definitions and exit ----
+    # Dry run: just print schedule definitions and exit 
     if args.dry_run:
         print("\n[dry_run] Schedule definitions:")
         for name in sched_names:
@@ -95,7 +95,7 @@ def main(args):
         print("[dry_run] Exiting without loading model.")
         return
 
-    # ---- Model ----
+    # Model 
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -113,7 +113,7 @@ def main(args):
         model = model.to(device)
     model.eval()
 
-    # ---- Generation loop ----
+    # Generation loop 
     for sched_name in sched_names:
         schedule = get_final_schedule(sched_name, N_CHUNKS)
         out_dir = results_dir_for(model_name, sched_name)
@@ -130,7 +130,7 @@ def main(args):
             output_dir=out_dir,
             prompt_format=PROMPT_FORMAT,
             repetition_penalty=REPETITION_PENALTY,
-            n_shadows=n_shadows,
+            n_copies=n_shadows,
         )
 
     print(f"\n[experiment] Done. All results saved under: {RESULTS_DIR}")
